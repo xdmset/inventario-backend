@@ -9,11 +9,11 @@ CORS(app)
 # Configuración de conexión (Reemplaza con tus credenciales de la nube)
 # Sugerencia: Usa variables de entorno en Vercel para esto
 DB_CONFIG = {
-    'host': 'tu_host_en_la_nube.com',
-    'user': 'tu_usuario',
-    'password': 'tu_password',
+    'host': 'inventoryapp-ut-4d27.g.aivencloud.com',
+    'port': 18827,
+    'user': 'avnadmin',
+    'password': os.environ.get('DB_PASSWORD'), 
     'database': 'inventario_db',
-    'port': 3306,
     'cursorclass': pymysql.cursors.DictCursor
 }
 
