@@ -6,13 +6,11 @@ import os
 app = Flask(__name__)
 CORS(app)
 
-# Configuración de conexión (Reemplaza con tus credenciales de la nube)
-# Sugerencia: Usa variables de entorno en Vercel para esto
 DB_CONFIG = {
     'host': 'inventoryapp-ut-4d27.g.aivencloud.com',
     'port': 18827,
     'user': 'avnadmin',
-    'password': os.environ.get('DB_PASSWORD'), 
+    'password': os.environ.get('DB_PASSWORD'),
     'database': 'inventario_db',
     'cursorclass': pymysql.cursors.DictCursor
 }
@@ -20,55 +18,45 @@ DB_CONFIG = {
 def get_db_connection():
     return pymysql.connect(**DB_CONFIG)
 
-@app.route('/')
-def home():
-    return jsonify({"status": "API de Inventario Online", "message": "Conexión exitosa"})
-
 @app.route('/productos', methods=['GET'])
 def get_productos():
-    try:
-        conn = get_db_connection()
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT * FROM productos")
-            productos = cursor.fetchall()
-        conn.close()
-        return jsonify(productos)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    conn = get_db_connection()
+    with conn.cursor() as cursor:
+        cursor.execute("SELECT * FROM productos ORDER BY fecha_actualizacion DESC")
+        productos = cursor.fetchall()
+    conn.close()
+    return jsonify(productos)
 
-@app.route('/escanear', methods=['POST'])
-def escanear():
+@app.route('/actualizar', methods=['POST'])
+def actualizar():
     data = request.json
     barcode = data.get('barcode')
-    
-    if not barcode:
-        return jsonify({"mensaje": "Código de barras no proporcionado", "success": False}), 400
+    operacion = data.get('operacion') # 'sumar', 'restar', 'crear'
+    nombre = data.get('nombre', 'Nuevo Producto')
+    precio = data.get('precio', 0.0)
 
-    try:
-        conn = get_db_connection()
-        with conn.cursor() as cursor:
-            # 1. Buscar producto
-            cursor.execute("SELECT * FROM productos WHERE codigo_barras = %s", (barcode,))
-            producto = cursor.fetchone()
-            
+    conn = get_db_connection()
+    with conn.cursor() as cursor:
+        cursor.execute("SELECT * FROM productos WHERE codigo_barras = %s", (barcode,))
+        producto = cursor.fetchone()
+
+        if operacion == 'crear':
             if producto:
-                if producto['cantidad'] > 0:
-                    nueva_qty = producto['cantidad'] - 1
-                    cursor.execute("UPDATE productos SET cantidad = %s WHERE id = %s", (nueva_qty, producto['id']))
-                    conn.commit()
-                    mensaje = f"Éxito: Se descontó 1 unidad de {producto['nombre']}. Quedan: {nueva_qty}"
-                    success = True
-                else:
-                    mensaje = f"Agotado: {producto['nombre']} no tiene stock disponible."
-                    success = False
-            else:
-                mensaje = f"No encontrado: El código {barcode} no existe en la base de datos."
-                success = False
-                
-        conn.close()
-        return jsonify({"mensaje": mensaje, "success": success})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+                return jsonify({"mensaje": "El producto ya existe", "success": False})
+            cursor.execute("INSERT INTO productos (codigo_barras, nombre, cantidad, precio) VALUES (%s, %s, %s, %s)",
+                           (barcode, nombre, 1, precio))
+            mensaje = f"Producto {nombre} registrado con éxito."
+        
+        elif producto:
+            nueva_qty = producto['cantidad'] + 1 if operacion == 'sumar' else max(0, producto['cantidad'] - 1)
+            cursor.execute("UPDATE productos SET cantidad = %s WHERE id = %s", (nueva_qty, producto['id']))
+            mensaje = f"{producto['nombre']} actualizado a {nueva_qty} unidades."
+        else:
+            return jsonify({"mensaje": "Producto no encontrado", "success": False, "not_found": True})
 
-# Necesario para que Vercel reconozca la app
-app.debug = True
+        conn.commit()
+    conn.close()
+    return jsonify({"mensaje": mensaje, "success": True})
+
+if __name__ == '__main__':
+    app.run(debug=True)
